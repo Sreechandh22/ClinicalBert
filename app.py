@@ -86,7 +86,7 @@ def load_clinical_data(data_file, sample_size=1.0):
     if sample_size < 1.0:
         df = df.sample(frac=sample_size)
     # Apply text augmentation and lab results extraction
-    df['text'] = df['text'].apply(augment_text)
+    df['text'] = df['text'].astype(str).apply(augment_text)
     df['lab_results'] = df['text'].apply(extract_lab_results)
     # Combine text and lab results for feature extraction
     df['combined_features'] = df.apply(lambda row: row['text'] + ' ' + ' '.join([f'{k}:{v}' for k, v in row['lab_results'].items()]), axis=1)
@@ -101,7 +101,7 @@ def extract_medical_features(text):
         "symptoms": [],
         "medical_conditions": [],
         "family_history": [],
-        "social_history": []
+        " ": []
     }
     for ent in doc.ents:
         if ent.label_ in ["SYMPTOM", "DISEASE"]:
@@ -202,6 +202,48 @@ tokenizer = BertTokenizer.from_pretrained(bert_model_name)
 
 # Load BERT model for sequence classification
 model = BertForSequenceClassification.from_pretrained(bert_model_name, num_labels=num_diagnosis_labels).to(device)
+
+def predict_diagnosis(text, model, tokenizer, max_length):
+    """
+    Predict the diagnosis for a given clinical text.
+
+    Parameters:
+    text (str): A string containing the clinical text.
+    model (BertForSequenceClassification): The trained BERT model.
+    tokenizer (BertTokenizer): The tokenizer used with the BERT model.
+    max_length (int): Maximum length of the tokenized input.
+
+    Returns:
+    int: The predicted label for the diagnosis.
+    """
+
+    # Preprocess and tokenize the text
+    encoded_text = tokenizer.encode_plus(
+        text, 
+        add_special_tokens=True, 
+        max_length=max_length, 
+        padding='max_length', 
+        truncation=True, 
+        return_attention_mask=True,
+        return_tensors='pt'
+    )
+
+    input_ids = encoded_text['input_ids'].to(device)
+    attention_mask = encoded_text['attention_mask'].to(device)
+
+    # Predict using the model
+    with torch.no_grad():
+        model.eval()  # Evaluation mode
+        outputs = model(input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+        predicted_label = torch.argmax(logits, dim=1).item()
+
+    return predicted_label
+
+# Example usage
+example_text = "Patient presents with a cough and high fever for the last three days. History of asthma."
+predicted_label = predict_diagnosis(example_text, model, tokenizer, max_length)
+print("Predicted Diagnosis Label:", predicted_label)
 
 # Function to extract features using the model
 def extract_features(dataloader, model, device):
